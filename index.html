@@ -1,0 +1,429 @@
+
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carrom Pro Game</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  padding:15px 8px;
+  background:#123b30;
+  color:white;
+  text-align:center;
+  font-family:Arial,sans-serif;
+}
+h1{margin:8px}
+.info{font-size:18px;margin:12px}
+.board{
+  width:min(94vw,650px);
+  aspect-ratio:1;
+  margin:15px auto;
+  padding:4%;
+  border-radius:15px;
+  background:linear-gradient(135deg,#c4864a,#74401e);
+  box-shadow:0 12px 28px #0008;
+}
+canvas{
+  display:block;
+  width:100%;
+  height:100%;
+  border:5px solid #633519;
+  border-radius:5px;
+  touch-action:none;
+}
+button{
+  padding:12px 20px;
+  margin:5px;
+  border:0;
+  border-radius:9px;
+  background:#ffcf72;
+  color:#26382c;
+  font-size:16px;
+  font-weight:bold;
+  cursor:pointer;
+}
+button:hover{background:#ffe4aa}
+#message{color:#ffdf93;min-height:26px}
+</style>
+</head>
+
+<body>
+
+<h1>🎯 Carrom Pro</h1>
+
+<div class="info">
+  🏆 স্কোর: <b id="score">0</b>
+  &nbsp; | &nbsp;
+  🪙 বাকি গুটি: <b id="left">19</b>
+</div>
+
+<div class="board">
+  <canvas id="game" width="600" height="600"></canvas>
+</div>
+
+<p>স্ট্রাইকারের পেছনে টেনে লক্ষ্য ঠিক করুন, তারপর ছেড়ে দিন।</p>
+<p id="message">খেলা শুরু হয়েছে! গুটি পকেটে ফেলুন।</p>
+
+<button onclick="resetGame()">🔄 নতুন গেম</button>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const SIZE = 600;
+const pockets = [
+  [48,48],
+  [552,48],
+  [48,552],
+  [552,552]
+];
+
+let coins = [];
+let striker;
+let score = 0;
+let aiming = false;
+let aim = null;
+let running = false;
+let lastTime = 0;
+
+function makePiece(x,y,r,color,type="coin"){
+  return {
+    x,y,r,color,type,
+    vx:0,vy:0
+  };
+}
+
+function resetGame(){
+  coins = [];
+  score = 0;
+  aiming = false;
+  aim = null;
+  running = false;
+
+  // লাল গুটি
+  coins.push(
+    makePiece(300,300,12,"#e32636","queen")
+  );
+
+  // প্রথম সারির গুটি
+  for(let i=0;i<6;i++){
+    const a=i*Math.PI/3;
+    coins.push(makePiece(
+      300+Math.cos(a)*27,
+      300+Math.sin(a)*27,
+      12,
+      i%2===0?"#f8edd8":"#222222"
+    ));
+  }
+
+  // বাইরের সারির গুটি
+  for(let i=0;i<12;i++){
+    const a=i*Math.PI/6;
+    coins.push(makePiece(
+      300+Math.cos(a)*55,
+      300+Math.sin(a)*55,
+      12,
+      i%2===0?"#222222":"#f8edd8"
+    ));
+  }
+
+  striker=makePiece(300,490,17,"#eab84d","striker");
+
+  updateInfo();
+  document.getElementById("message").textContent =
+    "স্ট্রাইকার টেনে শট নিন!";
+  draw();
+}
+
+function updateInfo(){
+  document.getElementById("score").textContent=score;
+  document.getElementById("left").textContent=coins.length;
+}
+
+function drawPiece(p){
+  ctx.save();
+
+  ctx.shadowColor="#0006";
+  ctx.shadowBlur=4;
+  ctx.shadowOffsetY=2;
+
+  ctx.beginPath();
+  ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+  ctx.fillStyle=p.color;
+  ctx.fill();
+
+  ctx.shadowColor="transparent";
+  ctx.lineWidth=2.5;
+  ctx.strokeStyle=p.type==="queen"?"#ffaaaa":"#b38c61";
+  ctx.stroke();
+
+  if(p.type==="queen"){
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,4,0,Math.PI*2);
+    ctx.fillStyle="white";
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,SIZE,SIZE);
+
+  ctx.fillStyle="#edc27e";
+  ctx.fillRect(0,0,SIZE,SIZE);
+
+  // বোর্ডের সীমানা
+  ctx.strokeStyle="#9e502b";
+  ctx.lineWidth=4;
+  ctx.strokeRect(58,58,484,484);
+
+  // মাঝের বৃত্ত
+  ctx.beginPath();
+  ctx.arc(300,300,75,0,Math.PI*2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(300,300,30,0,Math.PI*2);
+  ctx.stroke();
+
+  // স্ট্রাইকার লাইন
+  ctx.lineWidth=5;
+  ctx.beginPath();
+  ctx.moveTo(130,465);
+  ctx.lineTo(470,465);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(130,515);
+  ctx.lineTo(470,515);
+  ctx.stroke();
+
+  // পকেট
+  pockets.forEach(([x,y])=>{
+    ctx.beginPath();
+    ctx.arc(x,y,31,0,Math.PI*2);
+    ctx.fillStyle="#24140c";
+    ctx.fill();
+
+    ctx.lineWidth=4;
+    ctx.strokeStyle="#c28a4d";
+    ctx.stroke();
+  });
+
+  coins.forEach(drawPiece);
+  drawPiece(striker);
+
+  // শটের দিক
+  if(aiming && aim){
+    ctx.beginPath();
+    ctx.moveTo(striker.x,striker.y);
+    ctx.lineTo(aim.x,aim.y);
+    ctx.strokeStyle="#17694d";
+    ctx.lineWidth=4;
+    ctx.setLineDash([8,6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function getPosition(e){
+  const rect=canvas.getBoundingClientRect();
+
+  return {
+    x:(e.clientX-rect.left)*SIZE/rect.width,
+    y:(e.clientY-rect.top)*SIZE/rect.height
+  };
+}
+
+canvas.addEventListener("pointerdown",e=>{
+  if(running)return;
+
+  const p=getPosition(e);
+  const d=Math.hypot(
+    p.x-striker.x,
+    p.y-striker.y
+  );
+
+  if(d<48 || (p.y>430 && p.y<555)){
+    aiming=true;
+    aim=p;
+    canvas.setPointerCapture(e.pointerId);
+    draw();
+  }
+});
+
+canvas.addEventListener("pointermove",e=>{
+  if(!aiming)return;
+  aim=getPosition(e);
+  draw();
+});
+
+canvas.addEventListener("pointerup",e=>{
+  if(!aiming)return;
+
+  aim=getPosition(e);
+  aiming=false;
+
+  const dx=striker.x-aim.x;
+  const dy=striker.y-aim.y;
+  const length=Math.hypot(dx,dy);
+
+  if(length<7){
+    aim=null;
+    draw();
+    return;
+  }
+
+  // শটের শক্তি
+  const power=Math.min(length/7,18);
+
+  striker.vx=dx/length*power;
+  striker.vy=dy/length*power;
+
+  aim=null;
+  running=true;
+  lastTime=performance.now();
+
+  document.getElementById("message").textContent="শট চলছে...";
+  requestAnimationFrame(animate);
+});
+
+function animate(now){
+  const dt=Math.min((now-lastTime)/16.67,2);
+  lastTime=now;
+
+  const all=[...coins,striker];
+
+  // গুটির চলাচল ও দেয়ালে ধাক্কা
+  all.forEach(p=>{
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+
+    p.vx*=Math.pow(.992,dt);
+    p.vy*=Math.pow(.992,dt);
+
+    if(Math.abs(p.vx)<.035)p.vx=0;
+    if(Math.abs(p.vy)<.035)p.vy=0;
+
+    const min=63+p.r;
+    const max=537-p.r;
+
+    if(p.x<min){
+      p.x=min;
+      p.vx=Math.abs(p.vx)*.83;
+    }
+    if(p.x>max){
+      p.x=max;
+      p.vx=-Math.abs(p.vx)*.83;
+    }
+    if(p.y<min){
+      p.y=min;
+      p.vy=Math.abs(p.vy)*.83;
+    }
+    if(p.y>max){
+      p.y=max;
+      p.vy=-Math.abs(p.vy)*.83;
+    }
+  });
+
+  // গুটির সংঘর্ষ
+  for(let i=0;i<all.length;i++){
+    for(let j=i+1;j<all.length;j++){
+      const a=all[i],b=all[j];
+
+      const dx=b.x-a.x;
+      const dy=b.y-a.y;
+      const d=Math.hypot(dx,dy);
+      const min=a.r+b.r;
+
+      if(d>0 && d<min){
+        const nx=dx/d;
+        const ny=dy/d;
+        const overlap=min-d;
+
+        a.x-=nx*overlap/2;
+        a.y-=ny*overlap/2;
+        b.x+=nx*overlap/2;
+        b.y+=ny*overlap/2;
+
+        const relative=
+          (a.vx-b.vx)*nx+
+          (a.vy-b.vy)*ny;
+
+        if(relative>0){
+          const impulse=relative*.88;
+
+          a.vx-=impulse*nx;
+          a.vy-=impulse*ny;
+          b.vx+=impulse*nx;
+          b.vy+=impulse*ny;
+        }
+      }
+    }
+  }
+
+  // পকেটের কার্যকর এলাকা বড় করা হয়েছে।
+  // গুটি পকেটের কাছাকাছি এলেই পকেটে যাবে।
+  coins=coins.filter(p=>{
+    const pocketed=pockets.some(([x,y])=>
+      Math.hypot(p.x-x,p.y-y)<48
+    );
+
+    if(pocketed){
+      score+=p.type==="queen"?5:1;
+      return false;
+    }
+
+    return true;
+  });
+
+  // স্ট্রাইকার পকেটে পড়লে ফেরত আসবে
+  const strikerPocket=pockets.some(([x,y])=>
+    Math.hypot(striker.x-x,striker.y-y)<48
+  );
+
+  if(strikerPocket){
+    striker.x=300;
+    striker.y=490;
+    striker.vx=0;
+    striker.vy=0;
+    score=Math.max(0,score-1);
+  }
+
+  updateInfo();
+  draw();
+
+  // সব গুটি থেমেছে কি না
+  const stillMoving=all.some(p=>
+    Math.hypot(p.vx,p.vy)>.07
+  );
+
+  if(stillMoving){
+    requestAnimationFrame(animate);
+  }else{
+    running=false;
+
+    striker.x=300;
+    striker.y=490;
+    striker.vx=0;
+    striker.vy=0;
+
+    document.getElementById("message").textContent=
+      coins.length===0
+      ?"🎉 অভিনন্দন! সব গুটি পকেটে ফেলেছেন!"
+      :"পরের শট নেওয়ার জন্য প্রস্তুত!";
+
+    updateInfo();
+    draw();
+  }
+}
+
+resetGame();
+</script>
+</body>
+</html>
